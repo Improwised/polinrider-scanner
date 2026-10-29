@@ -26,3 +26,7 @@ _\$jsoIter
 # Command line of the detached node process the 5-1604-du variant spawns
 # (also matched against running processes by scan.sh)
 global\.i='[^']*';global\.r=require
+
+# Stage-3 C2 address reported publicly for the 5-1604-du variant (also checked
+# against live connections by scan.sh)
+193\.32\.162\.52

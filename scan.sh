@@ -196,6 +196,7 @@ if [ $HOST = 1 ]; then
       emit INFO process "pid $pid ($user)" "$(printf '%s' "$cmd" | cut -c1-200)"
     fi
   done < "$TMP/ps"
+  C2_IPS="193.32.162.52"
   RPC="ethereum-rpc.publicnode.com eth.drpc.org eth-mainnet.public.blastapi.io rpc.mevblocker.io bsc-dataseed.binance.org bsc-rpc.publicnode.com"
   if command -v lsof >/dev/null 2>&1; then
     lsof -nP -iTCP -sTCP:ESTABLISHED 2>/dev/null | awk 'NR>1{print $1, $2, $9}' > "$TMP/conns"
@@ -207,9 +208,50 @@ if [ $HOST = 1 ]; then
       done < <(getent ahosts "$h" 2>/dev/null \
                | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | sort -u)
     done
+    # stage-3 C2 reported publicly for the 5-1604-du variant
+    for ip in $C2_IPS; do
+      while read -r c pid peer; do
+        emit HIGH network "$c pid $pid -> $peer" "connected to known worm C2 $ip"
+      done < <(grep -F -- "->$ip:" "$TMP/conns")
+    done
   fi
   for hist in "$HOME"/.bash_history "$HOME"/.zsh_history "$HOME"/.local/share/fish/fish_history; do
     [ -f "$hist" ] && grep -qE -f "$TMP/all" "$hist" 2>/dev/null && emit WARN history "$hist" "mentions an indicator"
+  done
+
+  # Files the stage-3 payload drops, as reported publicly for the 5-1604-du
+  # variant (not observed directly). npm itself is never run: the payload is
+  # reported to re-trigger through npm's init script.
+  echo "== stage-3 artifacts"
+  TMPD=${WORM_SCAN_TMP:-/tmp}
+  if [ -d "$HOME/.node_modules" ]; then
+    mods=$(find "$HOME/.node_modules" -mindepth 1 -maxdepth 1 \( -name axios -o -name socket.io-client \) -printf '%f ' 2>/dev/null)
+    if [ -n "$mods" ]; then emit HIGH artifact "$HOME/.node_modules" "contains ${mods}(stage-3 drop folder)"
+    else emit WARN artifact "$HOME/.node_modules" "legacy per-user module folder, review its contents"; fi
+  fi
+  if [ -d "$TMPD/.pip" ]; then
+    pk=$(find "$TMPD/.pip" -maxdepth 4 -type d \( -iname 'secretstorage' -o -iname 'jeepney' -o -iname 'pyzipper*' -o -iname 'Cryptodome*' \) -printf '%f ' 2>/dev/null)
+    if [ -n "$pk" ]; then emit HIGH artifact "$TMPD/.pip" "credential-theft toolkit: $pk"
+    else emit WARN artifact "$TMPD/.pip" "hidden pip install target in $TMPD"; fi
+  fi
+  [ -f "$TMPD/get-pip.py" ] && emit WARN artifact "$TMPD/get-pip.py" "pip bootstrapper dropped in $TMPD"
+  u=$(id -un)
+  b64=$(printf '%s' "$u" | base64 -w0)
+  for m in $(printf '%s\n%s\n' "$b64" "${b64%%=*}" | sort -u); do
+    [ -e "$TMPD/$m" ] && emit HIGH artifact "$TMPD/$m" "marker file named after the base64 of user $u"
+  done
+  ntmp=$(find "$TMPD" -maxdepth 1 -name 'tmp*.tmp' -user "$u" 2>/dev/null | wc -l)
+  [ "$ntmp" -gt 0 ] && emit INFO artifact "$TMPD/tmp*.tmp" "$ntmp file(s) owned by $u; the payload is reported to create these"
+  if [ -f "$HOME/.npm-init.js" ]; then
+    if grep -qE -f "$TMP/all" "$HOME/.npm-init.js" 2>/dev/null; then classify_file "$HOME/.npm-init.js" persistence
+    else emit WARN persistence "$HOME/.npm-init.js" "npm init script present (reported persistence location), review it"; fi
+  fi
+  if [ -f "$HOME/.npmrc" ] && grep -qiE '^[[:space:]]*(init-module|init\.module|onload-script|node-options)[[:space:]]*=' "$HOME/.npmrc"; then
+    emit WARN persistence "$HOME/.npmrc" "$(grep -iE '^[[:space:]]*(init-module|init\.module|onload-script|node-options)[[:space:]]*=' "$HOME/.npmrc" | head -n 2 | tr '\n' ';')"
+  fi
+  for sp in "$HOME"/.local/lib/python3*/site-packages; do
+    [ -d "$sp/secretstorage" ] && [ -d "$sp/jeepney" ] && [ -d "$sp/pyzipper" ] && \
+      emit WARN artifact "$sp" "secretstorage + jeepney + pyzipper installed per-user (matches the reported toolkit)"
   done
 
   echo "== credentials stored on this machine (rotate all of them if anything above is HIGH)"

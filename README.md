@@ -21,7 +21,7 @@ git clone <this repo> && cd git-worm-scanner
 ```
 
 - Run it **as each user who develops on the machine**, without `sudo`. The host checks look at that user's `$HOME` (shell startup files, systemd user units, autostart entries, credentials).
-- Run it before anyone runs `npm install`, `dev`, `build` or `test` on that machine again.
+- Run it before anyone runs `npm install`, `dev`, `build` or `test` on that machine again. The payload is reported to re-trigger through npm itself, so **don't run any `npm` command on a suspect machine**, not even `npm config`. `scan.sh` never calls npm.
 
 | Exit code | Meaning |
 |---|---|
@@ -42,7 +42,13 @@ What it checks:
   - It flags *forged merges*: a commit whose message says "Merge …" but has a single parent. The worm drops the second parent when it rewrites a merge.
   - It flags repo `core.fsmonitor`, `core.hooksPath` and `core.sshCommand` settings, and hooks carrying indicators.
 - **Processes.** Variants `5-1604-du` and `5-1614-du` start a **detached `node -e "global.i='…';global.r=require;…"`** process, which keeps running after the npm command that started it exits. It is reported as `HIGH`. Any unusually long `node -e` command line is `WARN`.
-- **Network.** It reports established connections to the blockchain RPC hosts the loaders use to find their C2. Those hosts sit behind shared CDN IPs, so confirm any hit.
+- **Network.** It reports established connections to the known stage-3 C2 address `193.32.162.52`, and to the blockchain RPC hosts the loaders use to find their C2. The RPC hosts sit behind shared CDN IPs, so confirm any hit on them.
+- **Stage-3 artifacts.** These come from a public third-party analysis of the `5-1604-du` variant and were not observed here directly:
+  - `~/.node_modules` containing `axios` or `socket.io-client`
+  - `/tmp/.pip` holding a credential-theft toolkit (`secretstorage`, `jeepney`, `pyzipper`, `pycryptodomex`) and `/tmp/get-pip.py`
+  - a marker file at `/tmp/<base64 of the user name>`
+  - an infected `~/.npm-init.js`, or `init-module` / `onload-script` / `node-options` set in `~/.npmrc`
+  - The same toolkit installed per-user under `~/.local` is reported as `WARN`.
 - **Persistence.** Shell rc files, `~/.gitconfig`, `~/.npmrc`, crontab, systemd (system and user), XDG autostart (user and system), `/etc/profile.d`, and VS Code and Cursor extensions. Autostart entries changed in the last 14 days are listed.
 - **Credentials to rotate.** It lists the paths of gh, git, npm, AWS, Docker, kube, gcloud and Azure credential files and SSH private keys. It never prints their contents.
 
@@ -93,6 +99,8 @@ python3 repos/sweep.py clean findings.json --apply
 |---|---|---|
 | `5-1902-du` | `596dcc9fda875309ff85eba09cf5a97d` | The Ethereum tx `to` field points at a BSC transaction. Its input is XOR-decrypted with `8l%Sljl>J>U61O,n` and passed to `eval`. |
 | `5-1604-du`, `5-1614-du` | `33ff3edaf55a8e03dcbc7cb40d498a49` | The Ethereum tx `to` field encodes `IP:port`. It fetches `http://IP:port/boot` (header `X: <wallet>:<id>`), then `eval`s it **and** spawns a detached `node -e` (plus `node.exe` on WSL2). |
+
+The `N-NNNN` part of the marker differs between infected machines. In the cases where the pushing account could be identified, each marker matched exactly one account. So it looks like a per-victim ID that the C2 hands out, and a marker found in a repository points to the machine that pushed it.
 
 - The obfuscator is polymorphic: table names, seeds and constants change with every build. `iocs/high-confidence.regex` targets what all variants share:
   - the `global.o='N-NNNN-du'` marker

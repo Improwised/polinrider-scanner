@@ -56,10 +56,16 @@ check() { # description expected-count tsv grep-args...
 
 # a running payload process: argv carries the v2 command-line marker, it only sleeps
 mkdir -p "$FX/clean-host"
+# stage-3 drop artifacts (empty stand-ins) in the fake home and tmp
+mkdir -p "$FX/home/.node_modules/socket.io-client" "$FX/tmp/.pip/secretstorage" "$FX/home/.local/lib/python3.12/site-packages"
+: > "$FX/tmp/get-pip.py"
+B64=$(id -un | tr -d '\n' | base64 -w0); : > "$FX/tmp/$B64"
+printf '// %s\n' "$MARK" > "$FX/home/.npm-init.js"
+printf 'init-module=/tmp/x.js\n' > "$FX/home/.npmrc"
 PROC_ARG="global.i='5-1604-""du';global.r=require;"
 bash -c 'sleep 60; :' "$PROC_ARG" < /dev/null > /dev/null 2>&1 & FAKE=$!
 set +e
-HOME="$FX/home" "$HERE/scan.sh" --root "$FX/clean-host" --tsv "$FX/host.tsv" > "$FX/host.txt" 2>&1
+HOME="$FX/home" WORM_SCAN_TMP="$FX/tmp" "$HERE/scan.sh" --root "$FX/clean-host" --tsv "$FX/host.tsv" > "$FX/host.txt" 2>&1
 kill $(pgrep -P $FAKE 2>/dev/null) $FAKE 2>/dev/null
 "$HERE/scan.sh" --root "$FX/home" --no-host --tsv "$FX/out.tsv" > "$FX/out.txt"; rc=$?
 "$HERE/scan.sh" --root "$FX/home" --no-host --deep --tsv "$FX/deep.tsv" > /dev/null
@@ -77,6 +83,12 @@ check "heuristic RPC reference is WARN"       1 "$FX/out.tsv" '^WARN	file	.*/app
 check "obfuscator table alone is WARN"        1 "$FX/out.tsv" '^WARN	file	.*/app/obf.js'
 check "running payload process"               1 "$FX/host.tsv" "^HIGH	process	pid $FAKE "
 check "scanner does not flag itself"          0 "$FX/host.tsv" 'scan.sh'
+check "per-user .node_modules drop folder"    1 "$FX/host.tsv" '^HIGH	artifact	.*/home/.node_modules	contains socket.io-client'
+check "tmp pip toolkit"                       1 "$FX/host.tsv" '^HIGH	artifact	.*/tmp/.pip	credential-theft toolkit: secretstorage'
+check "get-pip.py in tmp"                     1 "$FX/host.tsv" '^WARN	artifact	.*/tmp/get-pip.py'
+check "base64 username marker"                1 "$FX/host.tsv" "^HIGH	artifact	.*/tmp/$B64	"
+check "infected npm init script"              1 "$FX/host.tsv" '^HIGH	persistence	.*/home/.npm-init.js'
+check "npmrc init-module"                     1 "$FX/host.tsv" '^WARN	persistence	.*/home/.npmrc'
 check "forged branch tip in work repo"        1 "$FX/out.tsv" '^HIGH	git	.*/home/proj  refs/heads/feature .*\(unsigned\): postcss.config.js'
 check "infected branch in bare mirror"        1 "$FX/out.tsv" '^HIGH	git	.*/mirror.git  refs/heads/main'
 check "clean main branch not flagged"         0 "$FX/out.tsv" 'proj  refs/heads/main'
