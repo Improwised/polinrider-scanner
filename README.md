@@ -6,7 +6,7 @@ This repo detects, and helps remove, the `global.o='N-NNNN-du'` git worm. The wo
 |---|---|
 | `scan.sh` | Scan one **Linux computer**: files, every git repo, running processes, persistence, stored credentials |
 | `iocs/*.regex` | The detection rules, shared by every tool here |
-| `github/irkit.py` | Scan a whole **GitHub org** and put forged branches back on their original commits |
+| `repos/sweep.py` | Scan recently pushed **GitHub and Forgejo** repositories and remove the worm from them |
 | `analysis/deobfuscate.py` | Unpack a sample statically, for new variants |
 
 Nothing here executes code from what it scans. Git runs with hooks and fsmonitor disabled, nothing is checked out, and nothing is installed.
@@ -54,20 +54,38 @@ What it checks:
 
 Under WSL2, the newer variants also launch `node.exe` on the Windows host. `scan.sh` only covers Linux. On such machines, check the Windows host by hand for `node.exe` processes whose command line contains `global.i=`, and scan the Windows user's source folders from WSL with `--root /mnt/c/Users/<name>`.
 
-## Clean the GitHub org
+## Clean GitHub and Forgejo repositories
 
-Run this from a clean machine with `gh` logged in as an org admin.
+Run this from a clean machine. GitHub access goes through `gh` (`gh auth login` as an org admin). Forgejo access uses a token in `$FORGEJO_TOKEN` with repository read/write on the org.
 
 ```sh
-python3 github/irkit.py scan <org>            # read-only: bare mirrors, every branch and PR head -> plan.json / plan.tsv
-python3 github/irkit.py apply plan.json        # dry run: prints each push it would make
-python3 github/irkit.py apply plan.json --apply
+# read-only; repeat --github / --forgejo for every owner
+python3 repos/sweep.py scan --github <org> --forgejo https://<forgejo-host>/<org> --since 45d --notifications
+python3 repos/sweep.py clean findings.json            # dry run: prints each push it would make
+python3 repos/sweep.py clean findings.json --apply
 ```
 
-- **Restore.** For each infected branch, `scan` looks up GitHub's force-push activity log, finds the commit the branch pointed to **before** the forged push, and checks that commit is clean. `apply` then moves the branch back to it with `--force-with-lease` against the forged tip, so a branch that changed since the scan is skipped.
-- **Cleanup commit.** Where no clean original exists, it adds a cleanup commit on top instead, removing the loader and its `createRequire` header.
-- **Before `--apply`:** allow admin force-pushes on protected branches. Restore the protection afterwards.
-- PR head refs (`refs/pull/*`) are reported only. Fix the source branch.
+**What counts as recent.** The worm keeps the original commit dates, so commit dates are useless here. "Recent" is decided by the server's own push time instead: GitHub `pushedAt`, Forgejo `updated_at`. Every branch tip of every repository pushed since `--since` gets checked.
+
+**Notifications as hints.** `--notifications` reads your GitHub and Forgejo notifications since `--since`, for example CI runs failing after a forced push. Repositories named there are checked first, even if they were pushed before `--since`. On GitHub this includes any owner; on Forgejo, only the listed orgs. GitHub needs the `notifications` or `repo` token scope for this. Each finding shows the notifications that point at it.
+
+**API calls.** The script prints its call counts at the end.
+
+| Platform | Calls |
+|---|---|
+| GitHub | one GraphQL query per 50 repositories, which also returns their branch tips; repos are sorted by push time, so paging stops at `--since` |
+| GitHub, extra | one query per repository with more than 100 branches, one per 20 notification-named repositories, one REST call per 50 notifications |
+| Forgejo | one call for the org id, one per 50 repositories (sorted by update time, stopping at `--since`), one per 50 notifications |
+| `clean --mode restore` | one GitHub REST call per infected repository |
+| No API calls | branch tips on Forgejo (`git ls-remote`) and all file contents (depth-1 git fetches) |
+
+`sweep-state.json` remembers every tip already checked, so a rerun only fetches branches that changed since.
+
+**Cleaning.**
+- **`restore` (default).** On GitHub, each infected branch goes back to the commit it pointed to **before** the forced push, taken from the repository's force-push activity log. This only happens if that commit is clean.
+- **`clean`, and the fallback.** Forgejo, or GitHub when no clean original exists, gets a cleanup commit on top that removes the loader and its `createRequire` header. The cleanup commit uses the identity from `--author`.
+- **Pushes are guarded.** Every push uses `--force-with-lease` against the infected tip found by the scan, so a branch that moved since then is skipped. Archived repositories are reported, not touched.
+- **Before `--apply`:** allow admin pushes on protected branches, and force-pushes too for `restore`. Put the protection back afterwards.
 
 ## Indicators
 
@@ -96,7 +114,8 @@ It finds the payload in the file and unpacks every layer without executing anyth
 ## Tests
 
 ```sh
-tests/run.sh
+tests/run.sh                                  # scan.sh
+python3 -m unittest tests/test_sweep.py       # repos/sweep.py against local git remotes, a fake gh and a fake Forgejo API
 ```
 
 The fixture is built at run time and contains fake markers only, never a real payload. The tests check:
@@ -105,4 +124,4 @@ The fixture is built at run time and contains fake markers only, never a real pa
 - false-positive controls: legitimate `createRequire`, padding with no code, real two-parent merges
 - that hooks and fsmonitor in a scanned repo never run
 
-Requirements: Linux with bash 4+, GNU grep, git and coreutils; `lsof` and `getent` for the network check; python3 for `github/` and `analysis/`.
+Requirements: Linux with bash 4+, GNU grep, git and coreutils; `lsof` and `getent` for the network check; python3 for `repos/` and `analysis/`. The GraphQL queries in `repos/sweep.py` are validated against GitHub's published schema, and the Forgejo calls follow Forgejo's API spec. Neither has been run against a live instance from this repository's tests.
