@@ -1,0 +1,28 @@
+# High-confidence indicators for the "global.o='N-NNNN-du'" git worm.
+# One POSIX extended regex (grep -E) per line. Lines starting with # and blank
+# lines are ignored. A match here means the file or commit carries the worm.
+#
+# The obfuscator is polymorphic: table names (_$_8ec1, _$_4544, ...), seeds and
+# constants change per build, so these target what stays the same. Seen so far:
+#   5-1902-du  (C2 wallet 596dcc9f..., stage 3 via BSC transaction + XOR + eval)
+#   5-1604-du  (C2 wallet 33ff3eda..., stage 3 via http://<ip:port>/boot, spawns detached node)
+
+# Campaign marker set by every loader seen: global.o='5-1902-du', '5-1604-du', ...
+global\.o='[0-9]+-[0-9]+-du'
+
+# Loader shape: eval("global.o=..."+atob('dmFyIF8kX...')), base64 of "var _$_"
+atob\('dmFyIF8kX
+
+# Helper emitted by the obfuscator into every payload seen
+_\$jsoIter
+
+# Ethereum wallet substrings the loaders look for in transaction senders
+596dcc9fda875309ff85eba09cf5a97d
+33ff3edaf55a8e03dcbc7cb40d498a49
+
+# XOR key used by the 5-1902-du stage 3
+8l%Sljl>J>U61O,n
+
+# Command line of the detached node process the 5-1604-du variant spawns
+# (also matched against running processes by scan.sh)
+global\.i='[^']*';global\.r=require

@@ -1,0 +1,21 @@
+# Heuristic indicators: catch new variants of the same technique, but can
+# match legitimate code (web3 projects, minified bundles). Review every hit.
+# One POSIX extended regex (grep -E) per line; # and blank lines ignored.
+
+# Code hidden after a long run of spaces at the end of a line, the worm's way
+# of pushing the payload off-screen in diff views
+[ ]{150,}(eval\(|global\.[A-Za-z_$]+ ?=|var _\$_|\(function\()
+
+# Any eval("global.<x>=...") loader, whatever the marker
+eval\("global\.[A-Za-z_$]+=
+
+# jsobfuscator.com-style string table: var _$_xxxx=(function(a,b){
+var _\$_[0-9a-f]{4}=\(function\([a-z],[a-z]\)\{
+
+# Public blockchain RPC endpoints the loaders use to find their C2
+ethereum-rpc\.publicnode\.com
+eth\.drpc\.org
+eth-mainnet\.public\.blastapi\.io
+rpc\.mevblocker\.io
+bsc-dataseed\.binance\.org
+bsc-rpc\.publicnode\.com

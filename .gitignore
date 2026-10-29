@@ -1,0 +1,6 @@
+irkit-mirrors/
+plan.json
+plan.tsv
+*.INERT
+__pycache__/
+findings*.tsv
