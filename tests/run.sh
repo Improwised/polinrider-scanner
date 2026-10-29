@@ -33,12 +33,12 @@ printf '#!/bin/sh\ntouch "%s/pwned-hook"\n# %s\n' "$FX" "$MARK" > "$R/.git/hooks
 
 # 2. infected file on disk (outside git)
 mkdir -p "$FX/home/app"
-printf 'export default defineNuxtConfig({});%seval("global.o=%s;"+atob(%s))\n' "$PAD" "'5-1604-""du'" "'dmFyIF8""kXzQ1NDQ9'" > "$FX/home/app/nuxt.config.ts"
+printf 'export default defineNuxtConfig({});%seval("glob''al.o=%s;"+atob(%s))\n' "$PAD" "'5-1604-""du'" "'dmFyIF8""kXzQ1NDQ9'" > "$FX/home/app/nuxt.config.ts"
 # obfuscator string table on its own is only heuristic
 printf 'var _$_%s=(function(q,w){return q})("",1);\n' "a349" > "$FX/home/app/obf.js"
 
 # 3. heuristic-only hit: references a C2 RPC endpoint
-printf 'const rpc = "https://bsc-dataseed.binance.org";\n' > "$FX/home/app/web3.js"
+printf 'const rpc = "https://bsc-dataseed.binance.or''g";\n' > "$FX/home/app/web3.js"
 
 # 4. bare mirror whose only branch is infected
 G clone -q --bare "$R" "$FX/home/mirror.git"
@@ -62,7 +62,7 @@ mkdir -p "$FX/home/.node_modules/socket.io-client" "$FX/tmp/.pip/secretstorage" 
 B64=$(id -un | tr -d '\n' | base64 -w0); : > "$FX/tmp/$B64"
 printf '// %s\n' "$MARK" > "$FX/home/.npm-init.js"
 printf 'init-module=/tmp/x.js\n' > "$FX/home/.npmrc"
-PROC_ARG="global.i='5-1604-""du';global.r=require;"
+PROC_ARG="global.i='5-1604-du';glob""al.r=require;"
 bash -c 'sleep 60; :' "$PROC_ARG" < /dev/null > /dev/null 2>&1 & FAKE=$!
 set +e
 HOME="$FX/home" WORM_SCAN_TMP="$FX/tmp" "$HERE/scan.sh" --root "$FX/clean-host" --tsv "$FX/host.tsv" > "$FX/host.txt" 2>&1
@@ -78,6 +78,10 @@ cat "$FX/out.txt"; echo
 [ $rc_clean = 0 ] && echo "ok   exit 0 when clean" || { echo "FAIL clean exit $rc_clean"; fail=1; }
 rc_self=0; (cd "$HERE" && ./scan.sh --root . --no-host > /dev/null) || rc_self=$?
 [ $rc_self = 0 ] && echo "ok   scanner ignores its own IOC files" || { echo "FAIL self-scan exit $rc_self"; fail=1; }
+# The repository itself must not match its own rules (no reliance on self-exclusion),
+# or every org scan reports it and teaches people to ignore HIGH findings.
+self_hits=$(cd "$HERE" && git ls-files -z 2>/dev/null | xargs -0 grep -IlE -f <(grep -hvE '^[[:space:]]*(#|$)' iocs/*.regex) 2>/dev/null || true)
+[ -z "$self_hits" ] && echo "ok   repository does not match its own rules" || { echo "FAIL repository matches its own rules: $self_hits"; fail=1; }
 check "infected file on disk"                 1 "$FX/out.tsv" '^HIGH	file	.*/app/nuxt.config.ts'
 check "heuristic RPC reference is WARN"       1 "$FX/out.tsv" '^WARN	file	.*/app/web3.js'
 check "obfuscator table alone is WARN"        1 "$FX/out.tsv" '^WARN	file	.*/app/obf.js'

@@ -41,8 +41,8 @@ What it checks:
 - **Git repositories.** Every branch, remote-tracking ref, tag, stash and recent `HEAD` reflog entry of every repo under the roots, including bare mirrors. For each infected ref it shows whether the commit is signed.
   - It flags *forged merges*: a commit whose message says "Merge …" but has a single parent. The worm drops the second parent when it rewrites a merge.
   - It flags repo `core.fsmonitor`, `core.hooksPath` and `core.sshCommand` settings, and hooks carrying indicators.
-- **Processes.** Variants `5-1604-du` and `5-1614-du` start a **detached `node -e "global.i='…';global.r=require;…"`** process, which keeps running after the npm command that started it exits. It is reported as `HIGH`. Any unusually long `node -e` command line is `WARN`.
-- **Network.** It reports established connections to the known stage-3 C2 address `193.32.162.52`, and to the blockchain RPC hosts the loaders use to find their C2. The RPC hosts sit behind shared CDN IPs, so confirm any hit on them.
+- **Processes.** Variants `5-1604-du` and `5-1614-du` start a **detached `node -e` process whose script begins by setting `global.i` and assigning `require` to `global.r`**, which keeps running after the npm command that started it exits. It is reported as `HIGH`. Any unusually long `node -e` command line is `WARN`.
+- **Network.** It reports established connections to the known stage-3 C2 address `193.32.162[.]52`, and to the blockchain RPC hosts the loaders use to find their C2. The RPC hosts sit behind shared CDN IPs, so confirm any hit on them.
 - **Stage-3 artifacts.** These come from a public third-party analysis of the `5-1604-du` variant and were not observed here directly:
   - `~/.node_modules` containing `axios` or `socket.io-client`
   - `/tmp/.pip` holding a credential-theft toolkit (`secretstorage`, `jeepney`, `pyzipper`, `pycryptodomex`) and `/tmp/get-pip.py`
@@ -97,19 +97,24 @@ python3 repos/sweep.py clean findings.json --apply
 
 | Variant | C2 wallet substring | How stage 3 is fetched |
 |---|---|---|
-| `5-1902-du` | `596dcc9fda875309ff85eba09cf5a97d` | The Ethereum tx `to` field points at a BSC transaction. Its input is XOR-decrypted with `8l%Sljl>J>U61O,n` and passed to `eval`. |
-| `5-1604-du`, `5-1614-du` | `33ff3edaf55a8e03dcbc7cb40d498a49` | The Ethereum tx `to` field encodes `IP:port`. It fetches `http://IP:port/boot` (header `X: <wallet>:<id>`), then `eval`s it **and** spawns a detached `node -e` (plus `node.exe` on WSL2). |
+| `5-1902-du` | `596dcc9fda875309ff85eba09cf5a97[d]` | The Ethereum tx `to` field points at a BSC transaction. Its input is XOR-decrypted with `8l%Sljl>J>U61O,[n]` and passed to `eval`. |
+| `5-1604-du`, `5-1614-du` | `33ff3edaf55a8e03dcbc7cb40d498a4[9]` | The Ethereum tx `to` field encodes `IP:port`. It fetches `http://IP:port/boot` (header `X: <wallet>:<id>`), then `eval`s it **and** spawns a detached `node -e` (plus `node.exe` on WSL2). |
 
 The `N-NNNN` part of the marker differs between infected machines. In the cases where the pushing account could be identified, each marker matched exactly one account. So it looks like a per-victim ID that the C2 hands out, and a marker found in a repository points to the machine that pushed it.
 
 - The obfuscator is polymorphic: table names, seeds and constants change with every build. `iocs/high-confidence.regex` targets what all variants share:
   - the `global.o='N-NNNN-du'` marker
-  - `atob('dmFyIF8kX` (base64 of `var _$_`)
-  - `_$jsoIter`
+  - an `atob(...)` argument starting with `dmFyIF8kX` (base64 of `var _$_`)
+  - the `_$jsoIte[r]` helper
   - the wallets, the XOR key and the spawned process's command line
 - Injected files seen so far: `nuxt.config.ts`, `svelte.config.js`, `postcss.config.js`, `server.ts`, `scripts/*.ts` and `scripts/*.js`. That is, files that run on `npm install`, `dev`, `build` or `test`.
 
-To add an indicator, add a line to one of the `iocs/*.regex` files: a POSIX extended regex (`grep -E`), with `#` comments allowed. Then run `tests/run.sh`.
+Values shown here are **defanged**, so this repository doesn't match its own rules: `[d]` stands for `d` and `[.]` for `.`. The exact patterns are in `iocs/`.
+
+To add an indicator, add a line to one of the `iocs/*.regex` files: a POSIX extended regex (`grep -E`), with `#` comments allowed.
+- Write each line so it can't match itself: escape a character, or wrap one in `[]`.
+- Keep the exact strings out of comments, docs and tests.
+- `tests/run.sh` fails if any file in the repository matches the rules.
 
 ## New variants
 

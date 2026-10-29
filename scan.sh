@@ -196,8 +196,10 @@ if [ $HOST = 1 ]; then
       emit INFO process "pid $pid ($user)" "$(printf '%s' "$cmd" | cut -c1-200)"
     fi
   done < "$TMP/ps"
-  C2_IPS="193.32.162.52"
-  RPC="ethereum-rpc.publicnode.com eth.drpc.org eth-mainnet.public.blastapi.io rpc.mevblocker.io bsc-dataseed.binance.org bsc-rpc.publicnode.com"
+  # literal IPs and host names in the rule files, unescaped (\. -> . and [x] -> x)
+  unesc() { sed -E 's/\\(.)/\1/g; s/\[(.)\]/\1/g' "$1"; }
+  C2_IPS=$(unesc "$TMP/high" | grep -E '^([0-9]{1,3}\.){3}[0-9]{1,3}$' | tr '\n' ' ')
+  RPC=$(strip "$SELF/iocs/heuristic.regex" | unesc /dev/stdin | grep -E '^[a-z0-9-]+(\.[a-z0-9-]+)+$' | tr '\n' ' ')
   if command -v lsof >/dev/null 2>&1; then
     lsof -nP -iTCP -sTCP:ESTABLISHED 2>/dev/null | awk 'NR>1{print $1, $2, $9}' > "$TMP/conns"
     for h in $RPC; do
