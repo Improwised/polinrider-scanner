@@ -1,6 +1,6 @@
-# malware-detection
+# polinrider-scanner
 
-This repo detects, and helps remove, the `global.o='N-NNNN-du'` git worm. The worm amends the newest commit on every branch it can push to, hides an obfuscated Node.js loader at the end of a padded line in a build config file, and force-pushes the result.
+This repo detects, and helps remove, the PolinRider git worm (`global.o='N-NNNN-du'` marker). The worm amends the newest commit on every branch it can push to, hides an obfuscated Node.js loader at the end of a padded line in a build config file, and force-pushes the result.
 
 | Tool | What it's for |
 |---|---|
@@ -14,7 +14,7 @@ Nothing here executes code from what it scans. Git runs with hooks and fsmonitor
 ## Scan a computer
 
 ```sh
-git clone <this repo> && cd git-worm-scanner
+git clone https://github.com/Improwised/polinrider-scanner.git && cd polinrider-scanner
 ./scan.sh                                   # scans $HOME
 ./scan.sh --root ~/code --root /srv/work    # extra places to look
 ./scan.sh --deep --tsv findings.tsv         # also node_modules and package caches; save findings
